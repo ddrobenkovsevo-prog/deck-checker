@@ -1,0 +1,8 @@
+# Core dependencies (work on laptop and Pi)
+numpy>=1.26
+opencv-python>=4.9
+pyyaml>=6.0
+
+# Dev tools
+pytest>=8.0
+ruff>=0.4
