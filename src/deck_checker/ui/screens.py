@@ -14,7 +14,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QPushButton, QProgressBar,
+    QLineEdit, QListWidget, QListWidgetItem, QPushButton, QProgressBar,
     QSizePolicy, QSpacerItem, QVBoxLayout, QWidget,
 )
 
@@ -44,7 +44,8 @@ def _hline() -> QFrame:
 class IdleScreen(QWidget):
     """Waiting for lid to close and first card."""
 
-    start_requested = pyqtSignal(GameType, int)   # game_type, num_decks
+    start_requested = pyqtSignal(GameType, int, dict)   # game_type, num_decks, metadata
+    admin_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,7 +77,7 @@ class IdleScreen(QWidget):
         logo_path = os.path.join(os.path.dirname(__file__), "evolution_logo_white.svg")
         if os.path.exists(logo_path):
             evo_logo = QSvgWidget(logo_path)
-            evo_logo.setFixedSize(160, 31)
+            evo_logo.setFixedSize(200, 39)
             right_header.addWidget(evo_logo, 0, Qt.AlignmentFlag.AlignRight)
         else:
             evo_lbl = _label("EVOLUTION", "label_info")
@@ -138,13 +139,36 @@ class IdleScreen(QWidget):
         instruction.setWordWrap(True)
         left.addWidget(instruction)
 
-        left.addSpacing(24)
+        left.addSpacing(16)
 
-        # Game type selector
-        game_lbl = _label("GAME TYPE", "label_info")
-        game_lbl.setStyleSheet(f"color: {COLORS['text_dim']}; letter-spacing: 2px;")
-        left.addWidget(game_lbl)
+        # Form grid
+        form_frame = QFrame()
+        form_frame.setObjectName("panel")
+        form_grid = QGridLayout(form_frame)
+        form_grid.setContentsMargins(16, 12, 16, 12)
+        form_grid.setSpacing(8)
+        form_grid.setColumnMinimumWidth(0, 120)
+        form_grid.setColumnStretch(1, 1)
 
+        def field_label(text):
+            lbl = _label(text, "label_info")
+            lbl.setStyleSheet(f"color: {COLORS['text_dim']}; letter-spacing: 1px;")
+            return lbl
+
+        def num_field(placeholder, max_len=4):
+            f = QLineEdit()
+            f.setPlaceholderText(placeholder)
+            f.setMaxLength(max_len)
+            f.setStyleSheet(
+                f"background: {COLORS['bg_tertiary']}; color: {COLORS['text_primary']};"
+                f"border: 1px solid {COLORS['border_bright']}; border-radius: 6px;"
+                f"padding: 6px 10px; font-family: {FONTS['mono']}; font-size: 15px;"
+                f"min-height: 36px;"
+            )
+            return f
+
+        # Row 0: Game Type
+        form_grid.addWidget(field_label("GAME TYPE"), 0, 0, Qt.AlignmentFlag.AlignVCenter)
         self._game_combo = QComboBox()
         self._game_combo.addItem("Blackjack",  GameType.BLACKJACK)
         self._game_combo.addItem("Baccarat",   GameType.BACCARAT)
@@ -152,22 +176,37 @@ class IdleScreen(QWidget):
         self._game_combo.addItem("Always 6",   GameType.BACCARAT)
         self._game_combo.addItem("Always 7",   GameType.BACCARAT)
         self._game_combo.addItem("Always 8",   GameType.BACCARAT)
-        self._game_combo.setMinimumWidth(220)
-        left.addWidget(self._game_combo)
+        form_grid.addWidget(self._game_combo, 0, 1)
 
-        left.addSpacing(12)
-
-        decks_lbl = _label("NUMBER OF DECKS", "label_info")
-        decks_lbl.setStyleSheet(f"color: {COLORS['text_dim']}; letter-spacing: 2px;")
-        left.addWidget(decks_lbl)
-
+        # Row 1: Number of Decks
+        form_grid.addWidget(field_label("DECKS"), 1, 0, Qt.AlignmentFlag.AlignVCenter)
         self._decks_combo = QComboBox()
         for n in [1, 2, 4, 6, 8]:
             self._decks_combo.addItem(f"{n} deck{'s' if n > 1 else ''}", n)
-        self._decks_combo.setCurrentIndex(4)   # default 8 decks
-        self._decks_combo.setMinimumWidth(220)
-        left.addWidget(self._decks_combo)
+        self._decks_combo.setCurrentIndex(4)
+        form_grid.addWidget(self._decks_combo, 1, 1)
 
+        # Row 2: Table Number
+        form_grid.addWidget(field_label("TABLE №"), 2, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._table_field = num_field("e.g. 1042", max_len=4)
+        form_grid.addWidget(self._table_field, 2, 1)
+
+        # Row 3: Inspector
+        form_grid.addWidget(field_label("INSPECTOR"), 3, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._inspector_field = num_field("ID", max_len=6)
+        form_grid.addWidget(self._inspector_field, 3, 1)
+
+        # Row 4: PIT
+        form_grid.addWidget(field_label("PIT"), 4, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._pit_field = num_field("PIT №", max_len=4)
+        form_grid.addWidget(self._pit_field, 4, 1)
+
+        # Row 5: Card Box
+        form_grid.addWidget(field_label("CARD BOX"), 5, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._cardbox_field = num_field("Box №", max_len=6)
+        form_grid.addWidget(self._cardbox_field, 5, 1)
+
+        left.addWidget(form_frame)
         left.addStretch()
         centre.addLayout(left, 3)
 
@@ -200,9 +239,18 @@ class IdleScreen(QWidget):
         footer.addWidget(self._lid_lbl)
         footer.addStretch()
 
+        btn_admin = QPushButton("⚙")
+        btn_admin.setFixedHeight(52)
+        btn_admin.setFixedWidth(60)
+        btn_admin.clicked.connect(self._on_admin)
+        footer.addWidget(btn_admin)
+
+        footer.addSpacing(12)
+
         btn_manual = QPushButton("START")
         btn_manual.setObjectName("btn_primary")
         btn_manual.setFixedHeight(52)
+        btn_manual.setMinimumWidth(140)
         btn_manual.clicked.connect(self._on_manual_start)
         footer.addWidget(btn_manual)
 
@@ -228,10 +276,19 @@ class IdleScreen(QWidget):
     def set_last_scan(self, text: str) -> None:
         self._last_lbl.setText(f"LAST SCAN: {text}")
 
+    def _on_admin(self) -> None:
+        self.admin_requested.emit()
+
     def _on_manual_start(self) -> None:
         game_type = self._game_combo.currentData()
         num_decks = self._decks_combo.currentData()
-        self.start_requested.emit(game_type, num_decks)
+        metadata = {
+            "table":    self._table_field.text().strip(),
+            "inspector":self._inspector_field.text().strip(),
+            "pit":      self._pit_field.text().strip(),
+            "card_box": self._cardbox_field.text().strip(),
+        }
+        self.start_requested.emit(game_type, num_decks, metadata)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

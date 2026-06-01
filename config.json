@@ -1,0 +1,37 @@
+{
+  "device": {
+    "device_name": "DECK-CHECKER-01",
+    "casino_name": "",
+    "country": "",
+    "site_id": "",
+    "location": ""
+  },
+  "scan": {
+    "default_game_type": "blackjack",
+    "default_num_decks": 8,
+    "confidence_threshold": 0.82,
+    "auto_retry_count": 2,
+    "scan_timeout_s": 120,
+    "card_timeout_s": 5
+  },
+  "network": {
+    "s3_bucket": "",
+    "s3_region": "eu-west-1",
+    "sftp_host": "",
+    "sftp_port": 22,
+    "sftp_user": "",
+    "sftp_path": "/deck-checker/reports/",
+    "sync_enabled": false,
+    "sync_interval_s": 300
+  },
+  "printer": {
+    "printer_port": "COM1",
+    "auto_print": false,
+    "print_on_error": true
+  },
+  "audit": {
+    "log_retention_days": 90,
+    "export_path": "",
+    "require_inspector": false
+  }
+}

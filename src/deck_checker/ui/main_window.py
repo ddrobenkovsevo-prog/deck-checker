@@ -24,6 +24,7 @@ from deck_checker.hardware.gpio import make_hall_sensor, make_motor, make_trigge
 from deck_checker.hardware.strobe import make_strobe
 from deck_checker.vision.recognition import TemplateLibrary
 from deck_checker.ui.screens import IdleScreen, ManualScreen, ResultScreen, ScanningScreen
+from deck_checker.ui.admin_screen import AdminScreen, PasswordDialog
 from deck_checker.ui.theme import COLORS, SCREEN_H, SCREEN_W, STYLESHEET
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ IDX_IDLE     = 0
 IDX_SCANNING = 1
 IDX_RESULT   = 2
 IDX_MANUAL   = 3
+IDX_ADMIN    = 4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +78,7 @@ class MainWindow(QMainWindow):
         self._bridge    = MachineBridge()
         self._scan_start: float = 0.0
         self._last_report: Optional[ScanReport] = None
+        self._scan_metadata: dict = {}
 
         self._build_ui()
         self._connect_bridge()
@@ -105,6 +108,8 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._screen_scanning)  # 1
         self._stack.addWidget(self._screen_result)    # 2
         self._stack.addWidget(self._screen_manual)    # 3
+        self._screen_admin = AdminScreen()
+        self._stack.addWidget(self._screen_admin)     # 4
 
         # Wire screen signals
         self._screen_idle.start_requested.connect(self._on_manual_start)
@@ -113,6 +118,8 @@ class MainWindow(QMainWindow):
         self._screen_result.reprint_requested.connect(self._on_reprint)
         self._screen_manual.override_submitted.connect(self._on_override)
         self._screen_manual.reset_requested.connect(self._on_reset)
+        self._screen_idle.admin_requested.connect(self._on_admin_requested)
+        self._screen_admin.close_requested.connect(self._on_admin_close)
 
         self._show_screen(IDX_IDLE)
 
@@ -232,13 +239,14 @@ class MainWindow(QMainWindow):
 
     # ── User action handlers ──────────────────────────────────────────────────
 
-    @pyqtSlot(object, int)
-    def _on_manual_start(self, game_type: GameType, num_decks: int) -> None:
-        """Operator pressed MANUAL START on idle screen."""
+    @pyqtSlot(object, int, dict)
+    def _on_manual_start(self, game_type: GameType, num_decks: int, metadata: dict) -> None:
+        """Operator pressed START on idle screen."""
         if not self._machine:
             return
         self._machine.context.game_type = game_type
         self._machine.context.num_decks = num_decks
+        self._scan_metadata = metadata
 
         # On mock (dev/Windows): feed a card to unblock the trigger wait
         from deck_checker.hardware.gpio import MockTrigger
@@ -256,6 +264,15 @@ class MainWindow(QMainWindow):
     def _on_reset(self) -> None:
         if self._machine:
             self._machine.reset()
+
+    @pyqtSlot()
+    def _on_admin_requested(self) -> None:
+        if PasswordDialog.authenticate(self):
+            self._show_screen(IDX_ADMIN)
+
+    @pyqtSlot()
+    def _on_admin_close(self) -> None:
+        self._show_screen(IDX_IDLE)
 
     @pyqtSlot()
     def _on_reprint(self) -> None:

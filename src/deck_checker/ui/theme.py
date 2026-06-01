@@ -11,11 +11,11 @@ Designed for 1024×600 touchscreen in a dimly lit casino back-office.
 
 # ── Colour palette ────────────────────────────────────────────────────────────
 COLORS = {
-    "bg_primary":    "#0D0F14",   # near-black background
-    "bg_secondary":  "#161920",   # card/panel background
-    "bg_tertiary":   "#1E2330",   # input/row background
-    "border":        "#2A3040",   # subtle border
-    "border_bright": "#3D4860",   # focused border
+    "bg_primary":    "#1E1040",   # near-black background
+    "bg_secondary":  "#261650",   # card/panel background
+    "bg_tertiary":   "#2E1E60",   # input/row background
+    "border":        "#3A2870",   # subtle border
+    "border_bright": "#5040A0",   # focused border
 
     "amber":         "#F5A623",   # primary accent — scanning, active
     "amber_dim":     "#7A5312",   # dimmed amber
