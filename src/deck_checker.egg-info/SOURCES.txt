@@ -21,3 +21,6 @@ src/deck_checker/vision/learning.py
 src/deck_checker/vision/preprocessing.py
 src/deck_checker/vision/recognition.py
 src/deck_checker/vision/roi.py
+tests/test_hardware.py
+tests/test_phase2.py
+tests/test_state_machine.py
