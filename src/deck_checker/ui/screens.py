@@ -10,7 +10,7 @@ from collections import Counter
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
@@ -239,9 +239,21 @@ class IdleScreen(QWidget):
         footer.addWidget(self._lid_lbl)
         footer.addStretch()
 
-        btn_admin = QPushButton("⚙")
-        btn_admin.setFixedHeight(52)
-        btn_admin.setFixedWidth(60)
+        import os
+        from PyQt6.QtCore import QSize
+        btn_admin = QPushButton()
+        btn_admin.setFixedSize(52, 52)
+        icon_path = os.path.join(os.path.dirname(__file__), "settings_icon_white.png")
+        if os.path.exists(icon_path):
+            btn_admin.setIcon(QIcon(icon_path))
+            btn_admin.setIconSize(QSize(28, 28))
+        else:
+            btn_admin.setText("SET")
+        btn_admin.setStyleSheet(
+            f"border-radius: 8px;"
+            f"background-color: {COLORS['bg_tertiary']};"
+            f"border: 1px solid {COLORS['border_bright']};"
+        )
         btn_admin.clicked.connect(self._on_admin)
         footer.addWidget(btn_admin)
 

@@ -32,18 +32,15 @@ class PasswordDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Admin Access")
-        self.setFixedSize(380, 200)
+        self.setFixedSize(480, 320)
         self.setStyleSheet(STYLESHEET)
-        self.setWindowFlags(
-            Qt.WindowType.Dialog |
-            Qt.WindowType.FramelessWindowHint
-        )
+        self.setWindowFlags(Qt.WindowType.Dialog)
         self._ok = False
         self._build()
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 28, 32, 28)
+        root.setContentsMargins(36, 32, 36, 36)
         root.setSpacing(16)
 
         title = QLabel("ADMIN ACCESS")
@@ -193,11 +190,12 @@ class AdminScreen(QWidget):
 
     def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 20, 32, 20)
+        root.setContentsMargins(40, 24, 40, 24)
         root.setSpacing(0)
 
         # ── Header ────────────────────────────────────────────────────────────
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
         title = QLabel("ADMIN SETTINGS")
         title.setStyleSheet(
             f"color: {COLORS['amber']}; font-family: {FONTS['mono']};"
@@ -206,9 +204,14 @@ class AdminScreen(QWidget):
         header.addWidget(title)
         header.addStretch()
 
-        btn_close = QPushButton("✕  CLOSE")
-        btn_close.setFixedHeight(44)
-        btn_close.setFixedWidth(120)
+        btn_close = QPushButton("X")
+        btn_close.setFixedSize(48, 48)
+        btn_close.setStyleSheet(
+            f"font-size: 22px; font-weight: bold; border-radius: 8px;"
+            f"background-color: {COLORS['red_dim']};"
+            f"border: 1px solid {COLORS['red']};"
+            f"color: {COLORS['red']};"
+        )
         btn_close.clicked.connect(self._on_close)
         header.addWidget(btn_close)
         root.addLayout(header)

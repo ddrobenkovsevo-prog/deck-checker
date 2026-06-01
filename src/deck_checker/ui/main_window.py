@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         if kiosk:
             self.showFullScreen()
         else:
-            self.resize(SCREEN_W, SCREEN_H)
+            self.resize(1100, 680)
             self.show()
 
     # ── UI construction ───────────────────────────────────────────────────────
