@@ -1,3 +1,7 @@
+.\sync.ps1 "Add instructions and project context" FOR PUSHING FROM PI AND WIND
+
+
+
 # Deck Checker
 
 Casino card deck verification system. Inspects 8-deck shoes (Blackjack / Baccarat) used in back-office, identifies missing, extra, and unrecognised cards.
