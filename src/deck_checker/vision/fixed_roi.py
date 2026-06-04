@@ -163,13 +163,12 @@ class AdaptiveRoiConfig:
     Robust to horizontal card drift (the card-running machine lets cards
     wander ~1cm left/right).
     """
-    # Wide search zone (fractions of frame)
-    # Widened on all sides to tolerate card drift both horizontally (~1cm)
-    # and vertically.
-    zone_x1: float = 0.58
-    zone_x2: float = 0.82
-    zone_y1: float = 0.13
-    zone_y2: float = 0.32
+    # Search zone (fractions of frame), sized for the normal case:
+    # card roughly centred with ~1cm horizontal drift and small angle.
+    zone_x1: float = 0.60
+    zone_x2: float = 0.78
+    zone_y1: float = 0.15
+    zone_y2: float = 0.30
 
     # Auto-exposure target mean brightness (0-255)
     target_mean: float = 120.0
@@ -263,61 +262,43 @@ def extract_rank_suit_adaptive(
     if len(blobs) < 2:
         return None, None
 
-    # Suit-anchored detection.
+    # Corner-pair detection optimised for the NORMAL case (card roughly
+    # centred, ±1cm horizontal drift, small angle).
     #
-    # The SUIT symbol (a compact club/heart/etc.) is the most reliably
-    # detected blob: it is small, solid, and roughly square. The RANK sits
-    # immediately to its RIGHT at a similar vertical level.
-    #
-    # 1. Score blobs for "suit-likeness": compact (near-square), small-ish,
-    #    in the upper area, NOT touching the zone's right edge (that's the
-    #    card edge under an angle).
-    # 2. Once the suit is chosen, the rank = nearest blob to the right at
-    #    similar Y.
+    # The rank and suit are the two SMALL COMPACT blobs in the upper part of
+    # the zone. We reject:
+    #   - large central pips (too big),
+    #   - the card edge / background (very tall or very wide blobs).
     zh, zw = binary.shape
     zone_area = zh * zw
 
-    def suit_score(b):
+    def is_symbol(b):
         x, y, bw, bh, area = b
         if bw == 0 or bh == 0:
-            return -1e9
-        aspect = min(bw, bh) / max(bw, bh)      # 1.0 = square (club-like)
+            return False
         frac = area / zone_area
-        cy = (y + bh / 2) / zh
-        # Compact + square + upper + medium-small
-        score = aspect * 2.0
-        score -= cy * 0.5                       # prefer upper
-        score -= abs(frac - 0.04) * 5.0         # ideal symbol size ~4% of zone
-        # Penalise blobs that span most of the zone height (edges/pips)
-        if bh > 0.7 * zh:
-            score -= 5.0
-        return score
+        # Symbols are modest in size
+        if not (0.008 < frac < 0.12):
+            return False
+        # Reject card-edge slivers: very tall/narrow or spanning most of zone
+        if bh > 0.75 * zh or bw > 0.75 * zw:
+            return False
+        aspect = min(bw, bh) / max(bw, bh)
+        if aspect < 0.30:            # too elongated = edge
+            return False
+        return True
 
-    suit_blob = max(blobs, key=suit_score)
-    sx, sy, sbw, sbh, _ = suit_blob
-    suit_cx = sx + sbw / 2
-    suit_cy = sy + sbh / 2
-
-    # Rank = blob to the RIGHT of suit, similar Y, closest
-    rank_blob = None
-    best_d = 1e9
-    for b in blobs:
-        if b is suit_blob:
-            continue
-        x, y, bw, bh, area = b
-        cx = x + bw / 2
-        cy = y + bh / 2
-        if cx <= suit_cx:           # must be to the right
-            continue
-        if abs(cy - suit_cy) > 0.5 * zh:   # roughly same row
-            continue
-        d = abs(cx - suit_cx) + abs(cy - suit_cy)
-        if d < best_d:
-            best_d = d
-            rank_blob = b
-
-    if rank_blob is None:
+    symbols = [b for b in blobs if is_symbol(b)]
+    if len(symbols) < 2:
         return None, None
+
+    # The corner pair = two symbols highest in the zone (smallest y)
+    symbols_by_y = sorted(symbols, key=lambda b: b[1] + b[3] / 2)
+    top_two = symbols_by_y[:2]
+
+    # rightmost = rank, left = suit
+    pair_by_x = sorted(top_two, key=lambda b: b[0])
+    suit_blob, rank_blob = pair_by_x[0], pair_by_x[1]
 
     def _crop(blob, out_w, out_h):
         x, y, bw, bh, _ = blob
