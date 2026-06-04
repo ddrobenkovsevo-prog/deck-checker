@@ -263,48 +263,61 @@ def extract_rank_suit_adaptive(
     if len(blobs) < 2:
         return None, None
 
-    # The rank+suit corner is a PAIR of small blobs sitting close together,
-    # in the upper-right region. Central pips are larger and more central.
-    # Strategy: find the rightmost cluster of small blobs near the top.
+    # Suit-anchored detection.
     #
-    # 1. Sort blobs by x (rightmost first) — rank/suit are on the right edge.
-    # 2. Among the rightmost few, pick the two that are vertically aligned
-    #    (rank above/below suit) and closest together.
+    # The SUIT symbol (a compact club/heart/etc.) is the most reliably
+    # detected blob: it is small, solid, and roughly square. The RANK sits
+    # immediately to its RIGHT at a similar vertical level.
+    #
+    # 1. Score blobs for "suit-likeness": compact (near-square), small-ish,
+    #    in the upper area, NOT touching the zone's right edge (that's the
+    #    card edge under an angle).
+    # 2. Once the suit is chosen, the rank = nearest blob to the right at
+    #    similar Y.
     zh, zw = binary.shape
     zone_area = zh * zw
 
-    # Prefer smaller blobs (rank/suit) over big central pips
-    # Score each blob: rightness + topness, penalise large area
-    def corner_score(b):
+    def suit_score(b):
+        x, y, bw, bh, area = b
+        if bw == 0 or bh == 0:
+            return -1e9
+        aspect = min(bw, bh) / max(bw, bh)      # 1.0 = square (club-like)
+        frac = area / zone_area
+        cy = (y + bh / 2) / zh
+        # Compact + square + upper + medium-small
+        score = aspect * 2.0
+        score -= cy * 0.5                       # prefer upper
+        score -= abs(frac - 0.04) * 5.0         # ideal symbol size ~4% of zone
+        # Penalise blobs that span most of the zone height (edges/pips)
+        if bh > 0.7 * zh:
+            score -= 5.0
+        return score
+
+    suit_blob = max(blobs, key=suit_score)
+    sx, sy, sbw, sbh, _ = suit_blob
+    suit_cx = sx + sbw / 2
+    suit_cy = sy + sbh / 2
+
+    # Rank = blob to the RIGHT of suit, similar Y, closest
+    rank_blob = None
+    best_d = 1e9
+    for b in blobs:
+        if b is suit_blob:
+            continue
         x, y, bw, bh, area = b
         cx = x + bw / 2
         cy = y + bh / 2
-        # Want high x (right), low y (top), small area
-        return (cx / zw) * 2.0 - (cy / zh) * 1.0 - (area / zone_area) * 3.0
+        if cx <= suit_cx:           # must be to the right
+            continue
+        if abs(cy - suit_cy) > 0.5 * zh:   # roughly same row
+            continue
+        d = abs(cx - suit_cx) + abs(cy - suit_cy)
+        if d < best_d:
+            best_d = d
+            rank_blob = b
 
-    blobs_scored = sorted(blobs, key=corner_score, reverse=True)
-    # Take top candidates and find the rank/suit pair among them
-    candidates = blobs_scored[:4]
-
-    # The rank and suit are the two closest-together blobs horizontally adjacent
-    best_pair = None
-    best_dist = 1e9
-    for i in range(len(candidates)):
-        for j in range(i + 1, len(candidates)):
-            b1, b2 = candidates[i], candidates[j]
-            c1 = (b1[0] + b1[2] / 2, b1[1] + b1[3] / 2)
-            c2 = (b2[0] + b2[2] / 2, b2[1] + b2[3] / 2)
-            dist = ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2) ** 0.5
-            if dist < best_dist:
-                best_dist = dist
-                best_pair = (b1, b2)
-
-    if best_pair is None:
+    if rank_blob is None:
         return None, None
-
-    # Rightmost of the pair = rank, other = suit
-    pair_by_x = sorted(best_pair, key=lambda b: b[0])
-    suit_blob, rank_blob = pair_by_x[0], pair_by_x[1]
 
     def _crop(blob, out_w, out_h):
         x, y, bw, bh, _ = blob
