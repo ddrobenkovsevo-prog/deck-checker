@@ -232,31 +232,11 @@ def extract_rank_suit_adaptive(
     else:
         gray = zone
 
-    # ── Build a mask of the white CARD area ─────────────────────────────────
-    # The card is bright (>~100); background/edges are darker.
-    # Find the largest bright region = the card, and only look for symbols
-    # inside it. This rejects the dark background and the card's edge.
-    _, card_mask = cv2.threshold(gray, 90, 255, cv2.THRESH_BINARY)
-    # Clean up the mask
-    mk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    card_mask = cv2.morphologyEx(card_mask, cv2.MORPH_CLOSE, mk)
-    card_mask = cv2.morphologyEx(card_mask, cv2.MORPH_OPEN, mk)
-
-    # Keep only the largest white component (the card body)
-    n_m, lbl_m, st_m, _ = cv2.connectedComponentsWithStats(card_mask, connectivity=8)
-    if n_m > 1:
-        largest = 1 + int(np.argmax(st_m[1:, cv2.CC_STAT_AREA]))
-        card_mask = np.where(lbl_m == largest, 255, 0).astype(np.uint8)
-    # Erode inward so the card's edge isn't included as a "symbol"
-    card_mask = cv2.erode(card_mask, mk, iterations=1)
-
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
     norm = clahe.apply(gray)
     _, binary = cv2.threshold(
         norm, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )
-    # Restrict symbols to inside the card body
-    binary = cv2.bitwise_and(binary, card_mask)
 
     blobs = _find_symbol_blobs(binary, cfg)
     if len(blobs) < 2:
@@ -277,14 +257,14 @@ def extract_rank_suit_adaptive(
         if bw == 0 or bh == 0:
             return False
         frac = area / zone_area
-        # Symbols are modest in size
-        if not (0.008 < frac < 0.12):
+        # Symbols are modest: club ~4%, rank digit ~2-5%. Big pips >12%.
+        if not (0.006 < frac < 0.12):
             return False
-        # Reject card-edge slivers: very tall/narrow or spanning most of zone
-        if bh > 0.75 * zh or bw > 0.75 * zw:
+        # Reject card-edge slivers spanning most of the zone
+        if bh > 0.80 * zh or bw > 0.80 * zw:
             return False
         aspect = min(bw, bh) / max(bw, bh)
-        if aspect < 0.30:            # too elongated = edge
+        if aspect < 0.22:            # extremely elongated = edge sliver
             return False
         return True
 
