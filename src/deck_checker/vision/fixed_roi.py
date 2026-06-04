@@ -33,22 +33,20 @@ class FixedRoiConfig:
     All values are fractions [0.0–1.0] of frame width/height.
     The corner zone is split into rank and suit sub-regions.
     """
-    # Overall corner zone
-    corner_x1: float = 0.66
+    # Overall corner zone (calibrated 2026-06 on real machine)
+    corner_x1: float = 0.655
     corner_x2: float = 0.79
-    corner_y1: float = 0.195
-    corner_y2: float = 0.265
+    corner_y1: float = 0.198
+    corner_y2: float = 0.242
 
-    # Card orientation in frame (machine holds cards upside-down)
-    rotate_180: bool = True
+    # Card orientation: machine holds cards so "9" reads upright already
+    rotate_180: bool = False
 
-    # Within the (rotated) corner, split point between rank and suit.
-    # After 180° rotation: rank ends up on the LEFT, suit on the RIGHT.
-    # split_x = fraction of corner width where rank|suit boundary sits.
-    rank_suit_split_x: float = 0.5
+    # Horizontal split: rank on the right, suit on the left
+    rank_suit_split_x: float = 0.52
 
-    # Which side is the rank after rotation: "left" or "right"
-    rank_side: str = "left"
+    # Which side is the rank: "left" or "right"
+    rank_side: str = "right"
 
     # Output sizes for matching
     rank_w: int = 60
@@ -152,3 +150,114 @@ def extract_rank_suit(
     corner = extract_corner(frame, cfg)
     rank_img, suit_img = split_rank_suit(corner, cfg)
     return binarise(rank_img), binarise(suit_img)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Adaptive extraction — handles ±1cm card drift
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class AdaptiveRoiConfig:
+    """
+    Wide search zone within which rank+suit symbols are located dynamically.
+    Robust to horizontal card drift (the card-running machine lets cards
+    wander ~1cm left/right).
+    """
+    # Wide search zone (fractions of frame)
+    zone_x1: float = 0.60
+    zone_x2: float = 0.80
+    zone_y1: float = 0.17
+    zone_y2: float = 0.27
+
+    # Auto-exposure target mean brightness (0-255)
+    target_mean: float = 120.0
+
+    # Blob area filter (fraction of zone area)
+    min_blob_frac: float = 0.01
+    max_blob_frac: float = 0.30
+
+    # Output sizes
+    rank_w: int = 60
+    rank_h: int = 80
+    suit_w: int = 60
+    suit_h: int = 60
+
+
+def _find_symbol_blobs(binary: np.ndarray, cfg: AdaptiveRoiConfig):
+    """Return list of (x, y, w, h, area) for symbol-sized blobs."""
+    n, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        binary, connectivity=8
+    )
+    zh, zw = binary.shape
+    zone_area = zh * zw
+    blobs = []
+    for i in range(1, n):
+        x, y, bw, bh, area = stats[i]
+        frac = area / zone_area
+        if cfg.min_blob_frac < frac < cfg.max_blob_frac:
+            blobs.append((int(x), int(y), int(bw), int(bh), int(area)))
+    return blobs
+
+
+def extract_rank_suit_adaptive(
+    frame: np.ndarray, cfg: AdaptiveRoiConfig | None = None
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """
+    Adaptive rank/suit extraction that tolerates card drift.
+
+    Strategy:
+      1. Crop the wide search zone.
+      2. CLAHE + Otsu to get a binary symbol mask.
+      3. Find symbol-sized blobs.
+      4. The rank + suit corner sits in the UPPER part of the zone:
+         take the two blobs with the smallest y (topmost).
+         Of those two, the rightmost is the rank, the other is the suit.
+      5. Crop each blob tightly and return binarised symbols.
+
+    Returns (rank_binary, suit_binary), or (None, None) if not found.
+    """
+    if cfg is None:
+        cfg = AdaptiveRoiConfig()
+
+    h, w = frame.shape[:2]
+    x1 = int(w * cfg.zone_x1)
+    x2 = int(w * cfg.zone_x2)
+    y1 = int(h * cfg.zone_y1)
+    y2 = int(h * cfg.zone_y2)
+    zone = frame[y1:y2, x1:x2]
+
+    if zone.ndim == 3:
+        gray = cv2.cvtColor(zone, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = zone
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    norm = clahe.apply(gray)
+    _, binary = cv2.threshold(
+        norm, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )
+
+    blobs = _find_symbol_blobs(binary, cfg)
+    if len(blobs) < 2:
+        return None, None
+
+    # Topmost two blobs (smallest y) = the rank/suit corner
+    blobs_by_y = sorted(blobs, key=lambda b: b[1])
+    top_two = blobs_by_y[:2]
+    # Rightmost = rank, other = suit
+    top_two_by_x = sorted(top_two, key=lambda b: b[0])
+    suit_blob, rank_blob = top_two_by_x[0], top_two_by_x[1]
+
+    def _crop(blob, out_w, out_h):
+        x, y, bw, bh, _ = blob
+        pad = 3
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1c = min(binary.shape[1], x + bw + pad)
+        y1c = min(binary.shape[0], y + bh + pad)
+        crop = binary[y0:y1c, x0:x1c]
+        return cv2.resize(crop, (out_w, out_h), interpolation=cv2.INTER_AREA)
+
+    rank_img = _crop(rank_blob, cfg.rank_w, cfg.rank_h)
+    suit_img = _crop(suit_blob, cfg.suit_w, cfg.suit_h)
+    return rank_img, suit_img
