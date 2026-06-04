@@ -164,10 +164,12 @@ class AdaptiveRoiConfig:
     wander ~1cm left/right).
     """
     # Wide search zone (fractions of frame)
-    zone_x1: float = 0.60
-    zone_x2: float = 0.80
-    zone_y1: float = 0.17
-    zone_y2: float = 0.27
+    # Widened on all sides to tolerate card drift both horizontally (~1cm)
+    # and vertically.
+    zone_x1: float = 0.58
+    zone_x2: float = 0.82
+    zone_y1: float = 0.13
+    zone_y2: float = 0.32
 
     # Auto-exposure target mean brightness (0-255)
     target_mean: float = 120.0
@@ -241,12 +243,48 @@ def extract_rank_suit_adaptive(
     if len(blobs) < 2:
         return None, None
 
-    # Topmost two blobs (smallest y) = the rank/suit corner
-    blobs_by_y = sorted(blobs, key=lambda b: b[1])
-    top_two = blobs_by_y[:2]
-    # Rightmost = rank, other = suit
-    top_two_by_x = sorted(top_two, key=lambda b: b[0])
-    suit_blob, rank_blob = top_two_by_x[0], top_two_by_x[1]
+    # The rank+suit corner is a PAIR of small blobs sitting close together,
+    # in the upper-right region. Central pips are larger and more central.
+    # Strategy: find the rightmost cluster of small blobs near the top.
+    #
+    # 1. Sort blobs by x (rightmost first) — rank/suit are on the right edge.
+    # 2. Among the rightmost few, pick the two that are vertically aligned
+    #    (rank above/below suit) and closest together.
+    zh, zw = binary.shape
+    zone_area = zh * zw
+
+    # Prefer smaller blobs (rank/suit) over big central pips
+    # Score each blob: rightness + topness, penalise large area
+    def corner_score(b):
+        x, y, bw, bh, area = b
+        cx = x + bw / 2
+        cy = y + bh / 2
+        # Want high x (right), low y (top), small area
+        return (cx / zw) * 2.0 - (cy / zh) * 1.0 - (area / zone_area) * 3.0
+
+    blobs_scored = sorted(blobs, key=corner_score, reverse=True)
+    # Take top candidates and find the rank/suit pair among them
+    candidates = blobs_scored[:4]
+
+    # The rank and suit are the two closest-together blobs horizontally adjacent
+    best_pair = None
+    best_dist = 1e9
+    for i in range(len(candidates)):
+        for j in range(i + 1, len(candidates)):
+            b1, b2 = candidates[i], candidates[j]
+            c1 = (b1[0] + b1[2] / 2, b1[1] + b1[3] / 2)
+            c2 = (b2[0] + b2[2] / 2, b2[1] + b2[3] / 2)
+            dist = ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_pair = (b1, b2)
+
+    if best_pair is None:
+        return None, None
+
+    # Rightmost of the pair = rank, other = suit
+    pair_by_x = sorted(best_pair, key=lambda b: b[0])
+    suit_blob, rank_blob = pair_by_x[0], pair_by_x[1]
 
     def _crop(blob, out_w, out_h):
         x, y, bw, bh, _ = blob
